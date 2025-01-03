@@ -54,6 +54,7 @@ async function run() {
      const db = client.db('plantNet')
      const plantsCollection = db.collection('plants')
      const usersCollection = db.collection('users');
+     const orderedCollection = db.collection('orderedPlants');
 
     // save and update user in db
     app.post("/users/:email", async(req,res)=>{
@@ -78,15 +79,120 @@ async function run() {
        const result = await plantsCollection.insertOne(plant);
        res.send(result)
     })
-// 
+
+// add ordered plant
+app.post('/order' ,verifyToken, async(req,res)=>{
+   const orderedPlant = req.body;
+   const result = await orderedCollection.insertOne(orderedPlant);
+   res.send(result)
+})
+
+// update plant quantity
+app.patch('/plants/quantity/:id', async(req,res)=>{
+    const id = req.params.id;
+    const {quantityToUpdate, status} = req.body;
+    console.log(quantityToUpdate,status);
+    // 
+    const filter ={ _id: new ObjectId(id)};
+
+    let updateQuantity={
+       $inc:{
+        quantity: - quantityToUpdate
+       }
+    }
+
+    if(status === 'increase'){
+     updateQuantity={
+        $inc:{
+         quantity: quantityToUpdate
+        }
+     }  
+    }
+    const result = await plantsCollection.updateOne(filter , updateQuantity );
+    res.send(result)
+})
+
+
   // get all plants
   app.get('/plants', async (req,res)=>{
     const result = await plantsCollection.find().toArray()
      res.send(result)
  })
+// get plant by id
+app.get("/plants/:id" , async(req, res)=>{
+    const id = req.params.id;
+    const query = {_id : new ObjectId(id)};
+    const result = await plantsCollection.findOne(query);
+    res.status(200).send(result);
+})
 
 
+// get specific user order data by email by aggregate
+app.get('/customer-order/:email' ,verifyToken, async(req,res)=>{
+    const email = req.params.email;
+   
+  // by aggregate
+  const result = await orderedCollection.aggregate([
+    // pipeline
+      {
+        // metch with the query
+        $match: {'coustomer.email' : email} ,
+      },
+      {
+        // string to convert obj id
+        $addFields:{   
+          productId : {$toObjectId : '$productId' }
+        },
+      },
+      // lookup (visit one collection to another collection)
+      {
+        $lookup :{
+             //where we want to look up (collection) 
+             from:'plants',
+            //  order collection id
+             localField:'productId',
+            // plants collection id
+             foreignField:'_id',
+             // name of the new array is get with order collection (usally is provided an array)
+             as:'plants'
+        },
+      },
+      // data in obj instance of array
+      {
+        $unwind : '$plants'
+      },
+      // for get some data from obj and add to order product array , (like key:value)
+      {
+        $addFields: {
+          plantName:'$plants.name',
+          plantImage:'$plants.image',
+          plantCategory:'$plants.category'
+        },
+      },
+      // to remove un used plants obj 
+      {
+        $project:{
+          plants:0, // this value is 1 or 0 ( if is 1 (plants:1) is just call plants and other all value is removed, 0 for remove the just plants key from the obj)
+          // name:1, we can not write like this is used 1 just one or 0 just 0
+          //we can call object item like this ...thats whats we need,
+        },
+      }
 
+  ]).toArray()
+
+  res.send(result);
+})
+// order cancled by user
+app.delete('/order-cancle/:id',verifyToken, async(req, res)=>{
+  const id = req.params.id;
+  const query = {
+      _id: new ObjectId(id)
+  };
+ const delivered = await orderedCollection.findOne(query);
+ if(delivered.status === "delivered") return res.status(409).send("Cannot cancled deleverd product")
+const result = await orderedCollection.deleteOne(query);
+res.status(200).send(result)
+})
 
 
 
