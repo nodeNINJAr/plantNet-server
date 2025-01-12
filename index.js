@@ -91,7 +91,6 @@ app.post('/order' ,verifyToken, async(req,res)=>{
 app.patch('/plants/quantity/:id', async(req,res)=>{
     const id = req.params.id;
     const {quantityToUpdate, status} = req.body;
-    console.log(quantityToUpdate,status);
     // 
     const filter ={ _id: new ObjectId(id)};
 
@@ -112,14 +111,28 @@ app.patch('/plants/quantity/:id', async(req,res)=>{
     res.send(result)
 })
 
+// set user role update request on usercollection
+app.patch('/users/:email', async(req,res)=>{
+   const email = req.params.email;
+   const query= {userEmail:email };
+   const user = await usersCollection.findOne(query);
+   if(!user || user?.role === "requested") return res.status(400).send('You already requested , wait for some time');
+    const updateRole = {
+      $set:{
+       role: 'requested',
+      }
+    }
+    const result = await usersCollection.updateOne(query, updateRole);
+    res.send(result)
+})
 
   // get all plants
   app.get('/plants', async (req,res)=>{
     const result = await plantsCollection.find().toArray()
      res.send(result)
  })
-// get plant by id
-app.get("/plants/:id" , async(req, res)=>{
+  // get plant by id
+  app.get("/plants/:id" , async(req, res)=>{
     const id = req.params.id;
     const query = {_id : new ObjectId(id)};
     const result = await plantsCollection.findOne(query);
@@ -127,15 +140,15 @@ app.get("/plants/:id" , async(req, res)=>{
 })
 
 
-// get specific user order data by email by aggregate
-app.get('/customer-order/:email' ,verifyToken, async(req,res)=>{
+   // get specific user order data by email by aggregate
+   app.get('/customer-order/:email' ,verifyToken, async(req,res)=>{
     const email = req.params.email;
    
-  // by aggregate
-  const result = await orderedCollection.aggregate([
+   // by aggregate for add data from multiple collection
+   const result = await orderedCollection.aggregate([
     // pipeline
       {
-        // metch with the query
+        // match with the query
         $match: {'coustomer.email' : email} ,
       },
       {
@@ -161,7 +174,7 @@ app.get('/customer-order/:email' ,verifyToken, async(req,res)=>{
       {
         $unwind : '$plants'
       },
-      // for get some data from obj and add to order product array , (like key:value)
+      // for get some data from unwind obj and add to order product array , (like key:value)
       {
         $addFields: {
           plantName:'$plants.name',
@@ -181,24 +194,33 @@ app.get('/customer-order/:email' ,verifyToken, async(req,res)=>{
   ]).toArray()
 
   res.send(result);
+  })
+// get user role data
+app.get('/user/role/:email',verifyToken, async (req,res)=>{
+   const email= req.params.email;
+   const query = { 
+      userEmail:email,
+   }
+   const user = await usersCollection.findOne(query)
+  //  if(!user || !user?.role === "admin"){
+  //     return res.status(403).send({message:"Forvidden Access"})
+  //  }
+  res.send({role:user?.role})
 })
-// order cancled by user
-app.delete('/order-cancle/:id',verifyToken, async(req, res)=>{
-  const id = req.params.id;
-  const query = {
-      _id: new ObjectId(id)
-  };
- const delivered = await orderedCollection.findOne(query);
- if(delivered.status === "delivered") return res.status(409).send("Cannot cancled deleverd product")
-const result = await orderedCollection.deleteOne(query);
-res.status(200).send(result)
-})
 
 
 
-
-
-
+  // order cancled by user
+  app.delete('/order-cancle/:id',verifyToken, async(req, res)=>{
+    const id = req.params.id;
+    const query = {
+        _id: new ObjectId(id)
+    };
+  const delivered = await orderedCollection.findOne(query);
+  if(delivered.status === "delivered") return res.status(409).send("You Cannot cancle a deliverd product")
+  const result = await orderedCollection.deleteOne(query);
+  res.status(200).send(result)
+  })
 
 
 
