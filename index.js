@@ -30,7 +30,7 @@ const verifyToken = async (req, res, next) => {
     if (err) {
       return res.status(401).send({ message: 'unauthorized access' })
     }
-    req.user = decoded
+    req.user = decoded;
     next()
   })
 }
@@ -169,6 +169,25 @@ app.patch('/user/role/:email',verifyToken, verifyAdmin, async(req,res)=>{
    const result = await usersCollection.updateOne(filter, updatedRole);
    res.send(result)
 })
+
+// update order status by seller 
+app.patch('/manage-order/status/:id',verifyToken,verifySeller, async(req,res)=>{
+  const id = req.params.id;
+  const status = req.body;
+  const query = {_id: new ObjectId(id) };
+  //  
+   const updateStatus = {
+     $set:{
+      status: status?.setStatus,
+     }
+   }
+   const result = await orderedCollection.updateOne(query, updateStatus);
+   res.send(result)
+})
+
+
+
+
   // get all plants
   app.get('/plants', async (req,res)=>{
     const result = await plantsCollection.find().toArray()
@@ -238,6 +257,56 @@ app.patch('/user/role/:email',verifyToken, verifyAdmin, async(req,res)=>{
 
   res.send(result);
   })
+
+
+// manage user order by seller using aggregrate
+app.get('/manage-order/:email', async(req,res)=>{
+   const email = req.params.email;
+   const result = await orderedCollection.aggregate([
+     //pipeline
+     {   
+      $match:{ 
+      sellerEmail:email}
+     },
+     {
+      $addFields:{   
+         productId:{$toObjectId:'$productId'}
+      }
+     },
+     {
+      $lookup:{
+        from:"plants",
+        localField:"productId",
+        foreignField:"_id",
+        as:"orders",
+      }
+     },
+     {
+      $unwind:'$orders'
+     },
+     {
+       $addFields:{
+         plantName:'$orders.name'
+       }
+     },
+      {
+        $project:{
+            orders:0,
+        }
+      }
+    
+   ]).toArray()
+ res.send(result)
+})
+
+
+
+
+
+
+
+
+
 // get user role api
 app.get('/user/role/:email',verifyToken, async (req,res)=>{
    const email= req.params.email;
@@ -262,22 +331,49 @@ app.get('/users/:email',verifyToken,verifyAdmin, async(req,res)=>{
 })
 
 
+// get all seller product
+app.get('/seller/plants',verifyToken,verifySeller, async(req,res)=>{
+   const email = req?.user?.email;
+   const result = await plantsCollection.find({'seller.email':email}).toArray();
+   res.send(result)
+})
+
+// added plant delete by seller
+app.delete('/plants/:id', async (req, res)=>{
+    const id = req.params.id;
+    const query = {
+        _id: new ObjectId(id),
+    }
+    const result = await plantsCollection.deleteOne(query);
+    res.send(result)
+})
 
 
 
-  // order cancled by user
-  app.delete('/order-cancle/:id',verifyToken, async(req, res)=>{
+  // Remove plants by Seller
+  app.delete('/manage-order/:id',verifyToken,verifySeller, async(req, res)=>{
     const id = req.params.id;
     const query = {
         _id: new ObjectId(id)
     };
-  const delivered = await orderedCollection.findOne(query);
-  if(delivered.status === "delivered") return res.status(409).send("You Cannot cancle a deliverd product")
+    const delivered = await orderedCollection.findOne(query);
+    if(delivered.status === "delivered") return res.status(409).send("You Cannot cancle a deliverd product")
   const result = await orderedCollection.deleteOne(query);
   res.status(200).send(result)
   })
 
 
+    //order cancled by user
+    app.delete('/order-cancle/:id',verifyToken, async(req, res)=>{
+      const id = req.params.id;
+      const query = {
+          _id: new ObjectId(id)
+      };
+    const delivered = await orderedCollection.findOne(query);
+    if(delivered.status === "delivered") return res.status(409).send("You Cannot cancle a deliverd product")
+    const result = await orderedCollection.deleteOne(query);
+    res.status(200).send(result)
+    })
 
     // Generate jwt token
     app.post('/jwt', async (req, res) => {
