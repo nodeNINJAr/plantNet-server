@@ -28,7 +28,6 @@ const verifyToken = async (req, res, next) => {
   }
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
     if (err) {
-      console.log(err)
       return res.status(401).send({ message: 'unauthorized access' })
     }
     req.user = decoded
@@ -37,6 +36,7 @@ const verifyToken = async (req, res, next) => {
 }
 
 
+// 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.pm9ea.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -56,6 +56,37 @@ async function run() {
      const usersCollection = db.collection('users');
      const orderedCollection = db.collection('orderedPlants');
 
+
+    // veryfy admin middleware
+    const verifyAdmin = async(req,res,next)=>{
+      const verifiedEmail = req.user.email;
+      const query = {
+        userEmail:verifiedEmail,
+      }
+      const user = await usersCollection.findOne(query)
+      // 
+      if(!user || user.role !== "admin"){
+          return res.status(403).send('Forbidden Access')
+      }
+      next()
+    }
+
+    // veryfy seller middleware
+    const verifySeller = async(req,res,next)=>{
+      const verifiedEmail = req.user.email;
+      const query = {
+        userEmail:verifiedEmail,
+      }
+      const user = await usersCollection.findOne(query)
+      // 
+      if(!user || user.role !== "seller"){
+          return res.status(403).send('Forbidden Access')
+      }
+      next()
+    }
+
+
+
     // save and update user in db
     app.post("/users/:email", async(req,res)=>{
         const email = req.params.email;
@@ -74,7 +105,7 @@ async function run() {
 
 
     // add plants
-    app.post('/plants', async (req,res)=>{
+    app.post('/plants',verifyToken,verifySeller, async (req,res)=>{
        const plant = req.body;
        const result = await plantsCollection.insertOne(plant);
        res.send(result)
@@ -88,7 +119,7 @@ app.post('/order' ,verifyToken, async(req,res)=>{
 })
 
 // update plant quantity
-app.patch('/plants/quantity/:id', async(req,res)=>{
+app.patch('/plants/quantity/:id',verifyToken, async(req,res)=>{
     const id = req.params.id;
     const {quantityToUpdate, status} = req.body;
     // 
@@ -112,20 +143,32 @@ app.patch('/plants/quantity/:id', async(req,res)=>{
 })
 
 // set user role update request on usercollection
-app.patch('/users/:email', async(req,res)=>{
+app.patch('/users/:email',verifyToken, async(req,res)=>{
    const email = req.params.email;
    const query= {userEmail:email };
    const user = await usersCollection.findOne(query);
-   if(!user || user?.role === "requested") return res.status(400).send('You already requested , wait for some time');
+   if(!user || user?.status === "requested") return res.status(400).send('You already requested , wait for some time');
     const updateRole = {
       $set:{
-       role: 'requested',
+       status: 'requested',
       }
     }
     const result = await usersCollection.updateOne(query, updateRole);
     res.send(result)
 })
-
+// update user role by admin
+app.patch('/user/role/:email',verifyToken, verifyAdmin, async(req,res)=>{
+   const email = req.params.email;
+   const{ role} = req.body;
+   const filter = {
+      userEmail:email,
+   }
+   const updatedRole ={
+      $set:{role, status:"verified"}
+   }
+   const result = await usersCollection.updateOne(filter, updatedRole);
+   res.send(result)
+})
   // get all plants
   app.get('/plants', async (req,res)=>{
     const result = await plantsCollection.find().toArray()
@@ -195,7 +238,7 @@ app.patch('/users/:email', async(req,res)=>{
 
   res.send(result);
   })
-// get user role data
+// get user role api
 app.get('/user/role/:email',verifyToken, async (req,res)=>{
    const email= req.params.email;
    const query = { 
@@ -207,6 +250,18 @@ app.get('/user/role/:email',verifyToken, async (req,res)=>{
   //  }
   res.send({role:user?.role})
 })
+//get all user api
+app.get('/users/:email',verifyToken,verifyAdmin, async(req,res)=>{
+   const email = req.params.email;
+  //  $ne: operator for find all data without query
+   const query = {
+       userEmail:{$ne:email}
+   }
+  const result = await usersCollection.find(query).toArray();
+  res.send(result)
+})
+
+
 
 
 
