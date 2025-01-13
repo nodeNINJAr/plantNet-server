@@ -4,7 +4,8 @@ const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const jwt = require('jsonwebtoken')
-const morgan = require('morgan')
+const morgan = require('morgan');
+const nodemailer = require("nodemailer");
 
 const port = process.env.PORT || 5000
 const app = express()
@@ -35,6 +36,45 @@ const verifyToken = async (req, res, next) => {
   })
 }
 
+
+// email sender by node mailer 1st perameter is email reciver and 2nd perameter is email data
+const sendMail= (emailAddress, emailData)=>{
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // true for port 465, false for other ports
+    auth: {
+      user:process.env.NODE_MAILER_EMAIL,
+      pass:process.env.NODE_MAILER_PASS,
+    },
+  });
+  // for verify connection user transporter is work or not for this user
+  transporter.verify((err, success)=>{
+    if(err){
+       console.log(err);
+    }
+    else{
+      console.log('transporter is ready to send email', success);
+    }
+  })
+
+  // send mail with defined transport object
+ const mailBody = {
+    from: process.env.NODE_MAILER_EMAIL, // sender address
+    to:emailAddress , // list of receivers
+    subject: emailData?.subject, // Subject line
+    html:`<p>${emailData?.message}</p>` // html body
+  };
+// send the mail
+  transporter.sendMail(mailBody,(err, info)=>{
+      if(err){
+        console.log(err);
+      }
+      else{
+        console.log('Email Sent : +' + info?.response);
+      }
+  } )
+}
 
 // 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.pm9ea.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
@@ -115,6 +155,18 @@ async function run() {
 app.post('/order' ,verifyToken, async(req,res)=>{
    const orderedPlant = req.body;
    const result = await orderedCollection.insertOne(orderedPlant);
+   if(result?.insertedId){
+    // to customer
+    sendMail(orderedPlant?.coustomer?.email, {
+      subject:'Order Comfermation',
+      message:`Your Order Success Your transaction Id is ${result?.insertedId}`
+    })
+     //to seller
+     sendMail(orderedPlant?.sellerEmail,{
+      subject:"Your products ordered",
+      message:`Your product Successfully orderd by ${orderedPlant?.coustomer?.name}`
+    })
+   }
    res.send(result)
 })
 
