@@ -75,6 +75,7 @@ const sendMail= (emailAddress, emailData)=>{
       }
   } )
 }
+// 
 
 // 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.pm9ea.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
@@ -351,7 +352,60 @@ app.get('/manage-order/:email', async(req,res)=>{
  res.send(result)
 })
 
+// admin stats
+app.get('/stats', async (req,res)=>{
 
+
+
+
+   const totalPlant = await plantsCollection.estimatedDocumentCount();
+   const totalUser = await usersCollection.estimatedDocumentCount();
+   const orderDetails = await orderedCollection.aggregate([
+       {
+         $group:{
+          _id:null,
+          totalRevenue:{$sum: "$price"},
+          totalOrders:{$sum:1}
+         }
+       },
+       {
+        $project:{
+          _id:0,
+        }
+       }
+   ]).next();
+  //  
+
+  const chartData = await orderedCollection.aggregate([
+    {
+      $group:{
+        _id:{
+          $dateToString:{
+            format:'%Y-%m-%d',
+            date:{$toDate:'$_id'}
+          },
+        },
+        quantity:{
+           $sum:"$quantity",
+        },
+        price:{$sum:"$price"},
+        order:{$sum:1}
+      }
+    },
+    {
+      $project:{
+       _id:0,
+       date:'$_id',
+       quantity:1,
+       price:1,
+       order:1,
+    }
+  }
+  ]).next()
+
+   res.send({totalPlant,totalUser,...orderDetails,chartData})
+
+})
 
 
 
