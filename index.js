@@ -6,7 +6,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const jwt = require('jsonwebtoken')
 const morgan = require('morgan');
 const nodemailer = require("nodemailer");
-
+const stripe = require('stripe')(process.env.STRIPE_PAYMENT_SECRET);
+// 
 const port = process.env.PORT || 5000
 const app = express()
 // middleware
@@ -152,24 +153,58 @@ async function run() {
        res.send(result)
     })
 
-// add ordered plant
-app.post('/order' ,verifyToken, async(req,res)=>{
-   const orderedPlant = req.body;
-   const result = await orderedCollection.insertOne(orderedPlant);
-   if(result?.insertedId){
-    // to customer
-    sendMail(orderedPlant?.coustomer?.email, {
-      subject:'Order Comfermation',
-      message:`Your Order Success Your transaction Id is ${result?.insertedId}`
+    // add ordered plant
+    app.post('/order' ,verifyToken, async(req,res)=>{
+      const orderedPlant = req.body;
+      const result = await orderedCollection.insertOne(orderedPlant);
+      if(result?.insertedId){
+        // to customer
+        sendMail(orderedPlant?.coustomer?.email, {
+          subject:'Order Comfermation',
+          message:`Your Order Success Your transaction Id is ${result?.insertedId}`
+        })
+        //to seller
+        sendMail(orderedPlant?.sellerEmail,{
+          subject:"Your products ordered",
+          message:`Your product Successfully orderd by ${orderedPlant?.coustomer?.name}`
+        })
+      }
+      res.send(result)
     })
-     //to seller
-     sendMail(orderedPlant?.sellerEmail,{
-      subject:"Your products ordered",
-      message:`Your product Successfully orderd by ${orderedPlant?.coustomer?.name}`
+
+    // create payment intent
+    app.post('/create-payment-intent', async(req, res)=>{
+        const {productId, quantity} = req.body;
+        const plant= await plantsCollection.findOne({_id: new ObjectId(productId)});
+        if(!plant){
+          return res.status(404).send({message:"Not found"});
+        }
+        const totalPrice = quantity * plant?.price *100 //make dollor to send
+        //  
+
+        const {client_secret} = await stripe.paymentIntents.create({
+          amount: totalPrice,
+          currency: 'usd',
+          automatic_payment_methods: {
+            enabled: true,
+          },
+        });
+
+       
+
+
+
+
+        res.send({client_secret})
     })
-   }
-   res.send(result)
-})
+
+
+
+
+
+
+
+
 
 // update plant quantity
 app.patch('/plants/quantity/:id',verifyToken, async(req,res)=>{
@@ -264,7 +299,7 @@ app.patch('/manage-order/status/:id',verifyToken,verifySeller, async(req,res)=>{
     // pipeline
       {
         // match with the query
-        $match: {'coustomer.email' : email} ,
+        $match: {'customer.email' : email} ,
       },
       {
         // string to convert obj id
@@ -354,10 +389,7 @@ app.get('/manage-order/:email', async(req,res)=>{
 
 // admin stats
 app.get('/stats', async (req,res)=>{
-
-
-
-
+// 
    const totalPlant = await plantsCollection.estimatedDocumentCount();
    const totalUser = await usersCollection.estimatedDocumentCount();
    const orderDetails = await orderedCollection.aggregate([
