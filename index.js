@@ -173,7 +173,7 @@ async function run() {
     })
 
     // create payment intent
-    app.post('/create-payment-intent', async(req, res)=>{
+    app.post('/create-payment-intent',verifyToken, async(req, res)=>{
         const {productId, quantity} = req.body;
         const plant= await plantsCollection.findOne({_id: new ObjectId(productId)});
         if(!plant){
@@ -181,7 +181,6 @@ async function run() {
         }
         const totalPrice = quantity * plant?.price *100 //make dollor to send
         //  
-
         const {client_secret} = await stripe.paymentIntents.create({
           amount: totalPrice,
           currency: 'usd',
@@ -189,11 +188,6 @@ async function run() {
             enabled: true,
           },
         });
-
-       
-
-
-
 
         res.send({client_secret})
     })
@@ -348,7 +342,7 @@ app.patch('/manage-order/status/:id',verifyToken,verifySeller, async(req,res)=>{
 
 
 // manage user order by seller using aggregrate
-app.get('/manage-order/:email', async(req,res)=>{
+app.get('/manage-order/:email',verifyToken,verifySeller, async(req,res)=>{
    const email = req.params.email;
    const result = await orderedCollection.aggregate([
      //pipeline
@@ -388,7 +382,7 @@ app.get('/manage-order/:email', async(req,res)=>{
 })
 
 // admin stats
-app.get('/stats', async (req,res)=>{
+app.get('/stats',verifyToken,verifyAdmin, async (req,res)=>{
 // 
    const totalPlant = await plantsCollection.estimatedDocumentCount();
    const totalUser = await usersCollection.estimatedDocumentCount();
@@ -410,7 +404,12 @@ app.get('/stats', async (req,res)=>{
 
   const chartData = await orderedCollection.aggregate([
     {
-      $group:{
+      $sort:{
+        _id:-1,
+      }
+    },
+    {
+      $addFields:{
         _id:{
           $dateToString:{
             format:'%Y-%m-%d',
@@ -433,7 +432,7 @@ app.get('/stats', async (req,res)=>{
        order:1,
     }
   }
-  ]).next()
+  ]).toArray()
 
    res.send({totalPlant,totalUser,...orderDetails,chartData})
 
