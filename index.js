@@ -12,7 +12,7 @@ const port = process.env.PORT || 5000
 const app = express()
 // middleware
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: ['http://localhost:5173', 'http://localhost:5174','https://plantnet-3f481.web.app', 'https://plantnet-3f481.firebaseapp.com'],
   credentials: true,
   optionSuccessStatus: 200,
 }
@@ -543,9 +543,9 @@ app.delete('/plants/:id', async (req, res)=>{
 
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 })
-    console.log(
-      'Pinged your deployment. You successfully connected to MongoDB!'
-    )
+    // console.log(
+    //   'Pinged your deployment. You successfully connected to MongoDB!'
+    // )
   } finally {
     // Ensures that the client will close when you finish/error
   }
